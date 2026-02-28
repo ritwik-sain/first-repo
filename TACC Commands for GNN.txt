@@ -1,0 +1,80 @@
+## TACC Commands for GNN
+
+## After logging in to TACC and requesting a compute node with GPUs, run:
+
+HOME=/home1/07645/rsain
+SCRATCH=/scratch/07645/rsain
+REPO="$HOME/gns-work/gns"
+MODELS="$SCRATCH/gns_models_run1"
+SIF="$SCRATCH/backup_gns_20260211_113708/gns_gpu.sif"
+DATA="$SCRATCH/gns-sample/WaterDropSample"
+
+module load tacc-apptainer
+# Run the apptainer shell
+apptainer shell --nv   --bind "$REPO":/workspace/gns,"$DATA":/workspace/dataset,"$MODELS":/workspace/models   "$SIF"
+# Go to the gns repo directory
+cd /workspace/gns
+
+# Create a backup for the config file
+cp /workspace/gns/config.yaml /workspace/gns/config.yaml.bak
+
+## Update the config file with the requirements of the current run, As an example:
+# Update the dataset path
+python3 /workspace/gns/scripts/set_config.py /workspace/gns/config.yaml data.path /workspace/dataset/
+# Set the total training steps to 2000
+python3 /workspace/gns/scripts/set_config.py /workspace/gns/config.yaml training.steps 2000
+# Save every 500 steps
+python3 /workspace/gns/scripts/set_config.py /workspace/gns/config.yaml training.save_steps 500
+# Set the models output directory
+python3 /workspace/gns/scripts/set_config.py /workspace/gns/config.yaml model.path /workspace/models/
+# Tell the trainer to resume from a checkpoint (make sure the model and train_state files exist in the models directory)
+python3 /workspace/gns/scripts/set_config.py /workspace/gns/config.yaml training.resume true
+python3 /workspace/gns/scripts/set_config.py /workspace/gns/config.yaml model.file model-100.pt
+python3 /workspace/gns/scripts/set_config.py /workspace/gns/config.yaml model.train_state_file train_state-100.pt
+
+# After making desired changes, verify the config file is updated with the intended values
+sed -n '1,200p' /workspace/gns/config.yaml
+# Run the gns training
+python3 -m gns.train mode="train" --config-path /workspace/gns --config-name config.yaml
+
+
+## To run rollouts, a gpu compute node is not required: you can use a cpu node with a lower SU charge to conserve SUs. After logging in to the desired compute node, follow the steps above until running the apptainer shell and cd to the gns repo directory. Here create (or edit) config_rollout.yaml file with the desired changes. Some example commands are listed below:
+
+# Create a backup for the config_rollout file if desired
+cp /workspace/gns/config_rollout.yaml /workspace/gns/config_rollout.yaml.bak
+
+# Create a rollout directory (or ensure it exists)
+mkdir -p /workspace/models/rollout
+
+# Switch to rollout mode
+python3 scripts/set_config.py /workspace/gns/config_rollout.yaml mode rollout
+# Set the models directory path
+python3 scripts/set_config.py /workspace/gns/config_rollout.yaml model.path /workspace/models/
+# Pick the model file to run rollouts for
+python3 scripts/set_config.py /workspace/gns/config_rollout.yaml model.file model-40000.pt
+# Set the train_state corresponding the the model selected
+python3 scripts/set_config.py /workspace/gns/config_rollout.yaml model.train_state_file train_state-40000.pt
+$ Update the dataset path
+python3 scripts/set_config.py /workspace/gns/config_rollout.yaml data.path /workspace/dataset/
+# Set the output path for the datasets to be stored in
+python3 scripts/set_config.py /workspace/gns/config_rollout.yaml output.path /workspace/models/rollout/
+# Set the output filename
+python3 scripts/set_config.py /workspace/gns/config_rollout.yaml output.filename rollout_40000.pt
+# Ensure resume training is set to false
+python3 scripts/set_config.py /workspace/gns/config_rollout.yaml training.resume false
+# Ensure not to force a specific CUDA device on a CPU node
+python3 scripts/set_config.py /workspace/gns/config_rollout.yaml hardware.cuda_device_number null
+
+# After making desired changes, verify the config file is updated with the intended values
+sed -n '1,240p' /workspace/gns/config_rollout.yaml
+# Make sure the model file mentioned in the config exists
+ls -lh /workspace/models/model-40000.pt
+# Ensure the rollout directory has required access
+chmod -R u+rw /workspace/models/rollout
+# Run the rollout
+python3 -m gns.train mode="rollout" --config-path /workspace/gns --config-name config_rollout.yaml
+
+# The rollouts and the rendered outputs for the model should be stored in the specified rollout directory
+
+
+
